@@ -1,16 +1,25 @@
+import { ParsedUrlQuery } from 'querystring';
+
 import { Box } from '@chakra-ui/react';
 import { useContentfulLiveUpdates } from '@contentful/live-preview/react';
-import { GetServerSideProps, InferGetServerSidePropsType } from 'next';
+import { GetStaticProps, InferGetStaticPropsType } from 'next';
 import { useTranslation } from 'next-i18next';
+import { useRouter } from 'next/router';
 
 import { ProductDetails, ProductTileGrid } from '@src/components/features/product';
 import { SeoFields } from '@src/components/features/seo';
 import { client, previewClient } from '@src/lib/client';
 import { getServerSideTranslations } from '@src/pages/utils/get-serverside-translations';
 
-const Page = (props: InferGetServerSidePropsType<typeof getServerSideProps>) => {
+const Page = (props: InferGetStaticPropsType<typeof getStaticProps>) => {
   const { t } = useTranslation();
+
+  const router = useRouter();
   const product = useContentfulLiveUpdates(props.product);
+
+  if (router.isFallback) {
+    return <>Loading...</>;
+  }
 
   return (
     <>
@@ -22,7 +31,8 @@ const Page = (props: InferGetServerSidePropsType<typeof getServerSideProps>) => 
             base: 5,
             md: 9,
             lg: 16,
-          }}>
+          }}
+        >
           <ProductTileGrid
             title={t('product.relatedProducts')}
             products={product.relatedProductsCollection.items}
@@ -33,7 +43,37 @@ const Page = (props: InferGetServerSidePropsType<typeof getServerSideProps>) => 
   );
 };
 
-export const getServerSideProps: GetServerSideProps = async ({ params, locale, preview }) => {
+export const getStaticPaths = async ({ locales }) => {
+  const gqlClient = client;
+  const paths: { params: ParsedUrlQuery; locale?: string }[] = [];
+
+  try {
+    // multiple locale
+    for (const locale of locales) {
+      const data = await gqlClient.pageLanding({ locale, preview: false });
+      const page = data.pageLandingCollection?.items[0];
+
+      const localePaths = (page?.productsCollection?.items ?? []).map(
+        product =>
+          ({
+            params: {
+              slug: product!.slug,
+            },
+            locale,
+          } as { params: ParsedUrlQuery; locale?: string }),
+      );
+
+      paths.push(...localePaths);
+    }
+  } catch (error) {}
+
+  return {
+    paths,
+    fallback: true,
+  };
+};
+
+export const getStaticProps: GetStaticProps = async ({ params, locale, preview }) => {
   if (!params?.slug || !locale) {
     return {
       notFound: true,
